@@ -16,16 +16,21 @@ type portForward struct {
 	hostPort string
 }
 
-func getPodName(deploy string) string {
+func getPodName(deploy string) (string, string) {
+
 	cmd := exec.Command("kubectl", "get", "pods", "--namespace", "default", "-l", fmt.Sprintf("app=%s", deploy), "-o", "jsonpath={.items[0].metadata.name}")
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	err := cmd.Run()
+
 	if err != nil {
-		os.Stderr.WriteString(err.Error())
+		// os.Stderr.WriteString(err.Error())
+		cmd.Wait()
+		return string(cmdOutput.Bytes()), fmt.Sprintf("%s pod not found", deploy)
 	}
+
 	cmd.Wait()
-	return string(cmdOutput.Bytes())
+	return string(cmdOutput.Bytes()), "0"
 }
 
 func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
@@ -33,7 +38,14 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
-		podName := getPodName(deploy)
+		podName, err := getPodName(deploy)
+
+		if err != "0" {
+			fmt.Println(err)
+			break
+
+		}
+
 		t := time.Now().Format("2006-01-02 15:04:05")
 		fmt.Printf("[%s] Forwarding %-12s port %3s to local port %4s [pod: %s]\n", t, deploy, podPort, hostPort, podName)
 		// fmt.Println(deploy)
@@ -44,11 +56,11 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 		// fmt.Println(cmd)
 		cmdOutput := &bytes.Buffer{}
 		cmd.Stdout = cmdOutput
-		err := cmd.Run()
+		execErr := cmd.Run()
 		// fmt.Println(err)
 
-		if err != nil {
-			os.Stderr.WriteString(err.Error())
+		if execErr != nil {
+			os.Stderr.WriteString(execErr.Error())
 			fmt.Println("")
 		}
 
