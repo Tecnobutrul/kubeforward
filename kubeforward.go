@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -69,22 +72,82 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 	}
 }
 
+func file_exists(filename string) bool {
+	info, err := os.Stat(filename)
+
+	if os.IsNotExist(err) {
+		return false
+	}
+
+	return !info.IsDir()
+}
+
+type Yaml struct {
+	Deploy []Deploy
+}
+
+type Deploy struct {
+	Name     string
+	Hostport string
+	Podport  string
+}
+
+func get_conf_file(filename string) Yaml {
+	data, _ := ioutil.ReadFile(filename)
+	config := Yaml{}
+
+	err := yaml.Unmarshal([]byte(data), &config)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	return config
+
+}
+
+// Get arguments and appends them to deployments array
+func get_args(config *Yaml) {
+	l := os.Args[2:]
+
+	for _, arg := range l {
+		var new_dep Deploy
+
+		fields := strings.Split(arg, ":")
+		new_dep.Name = fields[0]
+		new_dep.Hostport = string(fields[1])
+		new_dep.Podport = string(fields[2])
+		config.Deploy = append(config.Deploy, new_dep)
+	}
+
+}
+
+func show_help() {
+	fmt.Println("kubeforward: missing argument and deploy.yaml file.")
+	fmt.Println("Use: kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
+}
+
 func main() {
 
-	var podList [6]portForward
-	podList[0] = portForward{name: "auth", podPort: "80", hostPort: "8080"}
-	podList[1] = portForward{name: "calibration", podPort: "80", hostPort: "8081"}
-	podList[2] = portForward{name: "realtime", podPort: "80", hostPort: "8082"}
-	podList[3] = portForward{name: "profiles", podPort: "80", hostPort: "8083"}
-	podList[4] = portForward{name: "alarms", podPort: "80", hostPort: "8084"}
-	podList[5] = portForward{name: "gateway", podPort: "80", hostPort: "8085"}
+	var filename string = "deploy.yaml"
+	var config Yaml
+
+	// Check whether either any parameter or config file was received
+	if file_exists(filename) {
+		config = get_conf_file(filename)
+	} else {
+		if len(os.Args[1:]) < 1 {
+			show_help()
+			os.Exit(2)
+		}
+	}
+
+	get_args(&config)
 
 	var wg sync.WaitGroup
-	wg.Add(len(podList))
-
-	for idx, _ := range podList {
+	wg.Add(len(config.Deploy))
+	for _, dp := range config.Deploy {
 		// Initiates a goroutine for every port-forward
-		go startForward(podList[idx].name, podList[idx].hostPort, podList[idx].podPort, &wg)
+		go startForward(dp.Name, dp.Hostport, dp.Podport, &wg)
 	}
 	wg.Wait()
 }

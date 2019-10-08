@@ -1,0 +1,8 @@
+deploy:
+  - name: auth
+    hostport: 8080
+    podport: 80
+
+  - name: calibration
+    hostport: 8081
+    podport: 80
