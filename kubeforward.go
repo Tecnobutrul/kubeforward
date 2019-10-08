@@ -107,7 +107,7 @@ func get_conf_file(filename string) Yaml {
 
 // Get arguments and appends them to deployments array
 func get_args(config *Yaml) {
-	l := os.Args[2:]
+	l := os.Args[1:]
 
 	for _, arg := range l {
 		var new_dep Deploy
