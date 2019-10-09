@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -104,12 +106,27 @@ func get_conf_file(filename string) Yaml {
 
 }
 
+func arg_info() (string, []string) {
+	var fvar string
+
+	flag.StringVar(&fvar, "file", "foo", "a string var")
+	flag.Parse()
+
+	var path string
+	if fvar != "foo" {
+		path, _ = filepath.Abs(fvar)
+	} else {
+		path = "deploy.yaml"
+	}
+
+	return path, flag.Args()
+
+}
+
 // Get arguments and appends them to deployments array
-func get_args(config *Yaml) {
+func get_args(config *Yaml, a []string) {
 
-	l := os.Args[1:]
-
-	for _, arg := range l {
+	for _, arg := range a {
 		var new_dep Deployment
 
 		fields := strings.Split(arg, ":")
@@ -128,25 +145,27 @@ func show_help() {
 
 func main() {
 
-	var filename string = "deploy.yaml"
+	filename, args := arg_info()
+
+	// var filename string = "deploy.yaml"
 	var config Yaml
 
 	// Check whether either any parameter or config file was received
 	if file_exists(filename) {
 		config = get_conf_file(filename)
 	} else {
-		if len(os.Args[1:]) < 1 {
+		if len(args) < 0 {
 			show_help()
 			os.Exit(2)
 		}
 	}
-
-	get_args(&config)
+	get_args(&config, args)
 
 	var wg sync.WaitGroup
 	wg.Add(len(config.Deployment))
 
 	for _, dp := range config.Deployment {
+		fmt.Println(dp.Name)
 		// Initiates a goroutine for every port-forward
 		go startForward(dp.Name, dp.Hostport, dp.Podport, &wg)
 	}
