@@ -47,10 +47,9 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 		podName, err := getPodName(deploy)
 
 		if err != nil {
-			// If pod name wasn't found break the loop and finishes goroutine
+			// If pod name wasn't found, it breaks the loop and finishes goroutine
 			fmt.Println(err)
 			break
-
 		}
 
 		t := time.Now().Format("2006-01-02 15:04:05")
@@ -83,10 +82,10 @@ func file_exists(filename string) bool {
 }
 
 type Yaml struct {
-	Deploy []Deploy
+	Deployment []Deployment
 }
 
-type Deploy struct {
+type Deployment struct {
 	Name     string
 	Hostport string
 	Podport  string
@@ -107,16 +106,17 @@ func get_conf_file(filename string) Yaml {
 
 // Get arguments and appends them to deployments array
 func get_args(config *Yaml) {
+
 	l := os.Args[1:]
 
 	for _, arg := range l {
-		var new_dep Deploy
+		var new_dep Deployment
 
 		fields := strings.Split(arg, ":")
 		new_dep.Name = fields[0]
 		new_dep.Hostport = string(fields[1])
 		new_dep.Podport = string(fields[2])
-		config.Deploy = append(config.Deploy, new_dep)
+		config.Deployment = append(config.Deployment, new_dep)
 	}
 
 }
@@ -144,10 +144,12 @@ func main() {
 	get_args(&config)
 
 	var wg sync.WaitGroup
-	wg.Add(len(config.Deploy))
-	for _, dp := range config.Deploy {
+	wg.Add(len(config.Deployment))
+
+	for _, dp := range config.Deployment {
 		// Initiates a goroutine for every port-forward
 		go startForward(dp.Name, dp.Hostport, dp.Podport, &wg)
 	}
+
 	wg.Wait()
 }

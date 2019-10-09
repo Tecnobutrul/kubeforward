@@ -1,4 +1,4 @@
-deploy:
+deployment:
   - name: auth
     hostport: 8080
     podport: 80
