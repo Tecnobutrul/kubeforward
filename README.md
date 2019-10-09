@@ -6,10 +6,10 @@ This script receives deployment information from configuration (deploy.yaml) fil
 
 It always connects to first pod of each deployment array.
 
-Passing configuration as parameters:
+Passing configuration file and literals as parameters. In case you pass the file config as argument, it **should** be the first one:
 
 ```  
-kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]
+kubeforward [-file=/conf/file/path] [<deploy_name>:<host_port>:<pod_port> ...]
 ```
 
 Passing configuration as config file:
@@ -20,12 +20,11 @@ deploy:
     hostport: 8080
     podport: 80
 
-  - name: name
+  - name: <name>
     hostport: <port>
     podport: <port>
 ```
 
-The name of file must be deploy.yaml
 
 
 ## LICENSE
