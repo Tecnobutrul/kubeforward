@@ -122,7 +122,7 @@ func get_args(config *Yaml) {
 }
 
 func show_help() {
-	fmt.Println("kubeforward: missing argument and deploy.yaml file.")
+	fmt.Println("kubeforward: missing either argument or deploy.yaml file.")
 	fmt.Println("Use: kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
 }
 
