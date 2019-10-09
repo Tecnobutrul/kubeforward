@@ -138,6 +138,12 @@ func get_args(config *Yaml, a []string) {
 
 }
 
+// func ValidDeployInfo(s string) bool {
+// s = strings.ToLower(s)
+// var reSlash = regexp.MustCompile(`^$)`)
+// return reSlash.MatchString(s)
+// }
+
 func show_help() {
 	fmt.Println("kubeforward: missing either argument or deploy.yaml file.")
 	fmt.Println("Use: kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
@@ -146,26 +152,24 @@ func show_help() {
 func main() {
 
 	filename, args := arg_info()
-
-	// var filename string = "deploy.yaml"
 	var config Yaml
 
 	// Check whether either any parameter or config file was received
 	if file_exists(filename) {
 		config = get_conf_file(filename)
 	} else {
-		if len(args) < 0 {
+		if len(args) == 0 {
 			show_help()
 			os.Exit(2)
 		}
 	}
+
 	get_args(&config, args)
 
 	var wg sync.WaitGroup
 	wg.Add(len(config.Deployment))
 
 	for _, dp := range config.Deployment {
-		fmt.Println(dp.Name)
 		// Initiates a goroutine for every port-forward
 		go startForward(dp.Name, dp.Hostport, dp.Podport, &wg)
 	}
