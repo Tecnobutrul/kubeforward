@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -73,7 +74,7 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 	}
 }
 
-func file_exists(filename string) bool {
+func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
 
 	if os.IsNotExist(err) {
@@ -93,7 +94,7 @@ type Deployment struct {
 	Podport  string
 }
 
-func get_conf_file(filename string) Yaml {
+func getConfFile(filename string) Yaml {
 	data, _ := ioutil.ReadFile(filename)
 	config := Yaml{}
 
@@ -106,7 +107,7 @@ func get_conf_file(filename string) Yaml {
 
 }
 
-func arg_info() (string, []string) {
+func argInfo() (string, []string) {
 	var fvar string
 
 	flag.StringVar(&fvar, "file", "foo", "a string var")
@@ -124,47 +125,70 @@ func arg_info() (string, []string) {
 }
 
 // Get arguments and appends them to deployments array
-func get_args(config *Yaml, a []string) {
+func getArgsConfig(config *Yaml, a []string) {
 
 	for _, arg := range a {
 		var new_dep Deployment
+		var flag bool
 
-		fields := strings.Split(arg, ":")
-		new_dep.Name = fields[0]
-		new_dep.Hostport = string(fields[1])
-		new_dep.Podport = string(fields[2])
-		config.Deployment = append(config.Deployment, new_dep)
-	}
+		// If parameter is not correct, its config won't be added
+		if !ValidDeployInfo(arg) {
+			fmt.Println("Invalid deployment info format: ", string(arg), " ignored")
+			continue
+		}
+
+		for i, dp := range config.Deployment {
+
+			fields := strings.Split(arg, ":")
+			new_dep.Name = fields[0]
+			new_dep.Hostport = string(fields[1])
+			new_dep.Podport = string(fields[2])
+
+			// If deployment is already in config, overwrite it
+			if new_dep.Name == dp.Name {
+				config.Deployment[i] = new_dep
+				fmt.Errorf("%s removed.", config.Deployment[i])
+				flag = true
+				continue
+			}
+		}
+
+		if !flag {
+			config.Deployment = append(config.Deployment, new_dep)
+		}
+
+	} //for
 
 }
 
-// func ValidDeployInfo(s string) bool {
-// s = strings.ToLower(s)
-// var reSlash = regexp.MustCompile(`^$)`)
-// return reSlash.MatchString(s)
-// }
+func ValidDeployInfo(s string) bool {
+	s = strings.ToLower(s)
+	valid := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\.]{1,250}[:][0-9]{1,5}[:][0-9]{1,5}$`)
+	// valid := regexp.MustCompile(`^[a-z0-9]$`)
+	return valid.MatchString(s)
+}
 
-func show_help() {
+func showHelp() {
 	fmt.Println("kubeforward: missing either argument or deploy.yaml file.")
 	fmt.Println("Use: kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
 }
 
 func main() {
 
-	filename, args := arg_info()
+	filename, args := argInfo()
 	var config Yaml
 
 	// Check whether either any parameter or config file was received
-	if file_exists(filename) {
-		config = get_conf_file(filename)
+	if fileExists(filename) {
+		config = getConfFile(filename)
 	} else {
 		if len(args) == 0 {
-			show_help()
+			showHelp()
 			os.Exit(2)
 		}
 	}
 
-	get_args(&config, args)
+	getArgsConfig(&config, args)
 
 	var wg sync.WaitGroup
 	wg.Add(len(config.Deployment))
