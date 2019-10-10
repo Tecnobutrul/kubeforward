@@ -147,7 +147,6 @@ func getArgsConfig(config *Yaml, a []string) {
 			// If deployment is already in config, overwrite it
 			if new_dep.Name == dp.Name {
 				config.Deployment[i] = new_dep
-				fmt.Errorf("%s removed.", config.Deployment[i])
 				flag = true
 				continue
 			}
