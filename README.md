@@ -6,7 +6,9 @@ This script receives deployment information from configuration (deploy.yaml) fil
 
 It always connects to first pod of each deployment array.
 
-Passing configuration file and literals as parameters. In case you pass the file config as argument, it **should** be the first one:
+Configuration file path as well as aditional deployment info could be passed as parameters. The config file parameter should be the first.
+
+Argument configuration will overwrite the file configuration in case both define same deployment name.
 
 ```  
 kubeforward [-file=/conf/file/path] [<deploy_name>:<host_port>:<pod_port> ...]
