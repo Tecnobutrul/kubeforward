@@ -1,4 +1,16 @@
-# Kubefoward
+# Kubeforward
+
+kubeforward is a command line utility built to port forward some or all pods within a Kubernetes namespace. kubeforward uses the same port exposed by the service and forwards it from a loopback IP address on your local workstation. It loads all the configurations from a yml file so the configuration is quite easy.
+
+When developing on our local workstation, you often build applications that need to access services through ports within a Kubernetes namespace. kubefwd allows us to develop locally with services available as we would be in the cluster.
+
+## Installation
+
+In order to use `kubeforward` you can easily install it by issuing the command below: 
+
+```
+go get -u -v github.com/Tecnobutrul/kubeforward
+```
 
 ## Use
 
@@ -24,8 +36,6 @@ deploy:
     hostport: <port>
     podport: <port>
 ```
-
-
 
 ## LICENSE
 
