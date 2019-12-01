@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -56,21 +57,56 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 		}
 
 		t := time.Now().Format("2006-01-02 15:04:05")
-		fmt.Printf("[%s] Forwarding %-12s port %3s to local port %4s [pod: %s]\n", t, deploy, podPort, hostPort, podName)
 		cmd := exec.Command("kubectl", "port-forward", fmt.Sprintf("pods/%s", podName), fmt.Sprintf("%s:%s", hostPort, podPort))
-		cmdOutput := &bytes.Buffer{}
-		cmd.Stdout = cmdOutput
-		err = cmd.Run()
 
-		if err != nil {
-			os.Stderr.WriteString(err.Error())
-			fmt.Println("")
+		//Execution modes (verbose, debug, standard)
+		if isFlagPassed("verbose") {
+			var stdBuffer bytes.Buffer
+			mw := io.MultiWriter(os.Stdout, &stdBuffer)
+
+			cmd.Stdout = mw
+			cmd.Stderr = mw
+			fmt.Printf("[%s] Forwarding %-12s port %3s to local port %4s [pod: %s]\n", t, deploy, podPort, hostPort, podName)
+
+			// Execute the command
+			if err := cmd.Run(); err != nil {
+				log.Panic(err)
+			}
+
+			log.Println(stdBuffer.String())
+
+			cmd.Wait()
+
+			t = time.Now().Format("2006-01-02 15:04:05")
+			fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
+		} else if isFlagPassed("quite") {
+			cmdOutput := &bytes.Buffer{}
+			cmd.Stdout = cmdOutput
+			err = cmd.Run()
+
+			if err != nil {
+				os.Stderr.WriteString(err.Error())
+				fmt.Println("")
+			}
+		} else {
+			cmdOutput := &bytes.Buffer{}
+			cmd.Stdout = cmdOutput
+			fmt.Printf("[%s] Forwarding %-12s port %3s to local port %4s [pod: %s]\n", t, deploy, podPort, hostPort, podName)
+			err = cmd.Run()
+
+			if err != nil {
+				os.Stderr.WriteString(err.Error())
+				cmd.Wait()
+
+				t = time.Now().Format("2006-01-02 15:04:05")
+				fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
+				fmt.Println("")
+			}
+			cmd.Wait()
+
+			t = time.Now().Format("2006-01-02 15:04:05")
+			fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
 		}
-
-		cmd.Wait()
-
-		t = time.Now().Format("2006-01-02 15:04:05")
-		fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
 	}
 }
 
@@ -107,14 +143,18 @@ func getConfFile(filename string) Yaml {
 
 }
 
+// Return config file path if exists and an array of deploy configurations
 func argInfo() (string, []string) {
 	var fvar string
+	var svar bool = false
 
-	flag.StringVar(&fvar, "file", "foo", "a string var")
+	flag.StringVar(&fvar, "file", "", "string as path")
+	flag.BoolVar(&svar, "quite", true, "silent")
+	flag.BoolVar(&svar, "verbose", true, "debug mode enable")
 	flag.Parse()
 
 	var path string
-	if fvar != "foo" {
+	if fvar != "" {
 		path, _ = filepath.Abs(fvar)
 	} else {
 		path = "deploy.yaml"
@@ -170,6 +210,16 @@ func ValidDeployInfo(s string) bool {
 func showHelp() {
 	fmt.Println("kubeforward: missing either argument or deploy.yaml file.")
 	fmt.Println("Use: kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
+}
+
+func isFlagPassed(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 func main() {
