@@ -23,7 +23,7 @@ Configuration file path as well as aditional deployment info could be passed as 
 Argument configuration will overwrite the file configuration in case both define same deployment name.
 
 ```  
-kubeforward [-file=/conf/file/path] [<deploy_name>:<host_port>:<pod_port> ...]
+kubeforward [-quiet] [-verbose] [-file=/conf/file/path] [<deploy_name>:<host_port>:<pod_port> ...]
 ```
 
 Passing configuration as config file:

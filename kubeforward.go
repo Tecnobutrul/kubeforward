@@ -79,7 +79,7 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 
 			t = time.Now().Format("2006-01-02 15:04:05")
 			fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
-		} else if isFlagPassed("quite") {
+		} else if isFlagPassed("quiet") {
 			cmdOutput := &bytes.Buffer{}
 			cmd.Stdout = cmdOutput
 			err = cmd.Run()
@@ -149,7 +149,7 @@ func argInfo() (string, []string) {
 	var svar bool = false
 
 	flag.StringVar(&fvar, "file", "", "string as path")
-	flag.BoolVar(&svar, "quite", true, "silent")
+	flag.BoolVar(&svar, "quiet", true, "silent mode enable")
 	flag.BoolVar(&svar, "verbose", true, "debug mode enable")
 	flag.Parse()
 
