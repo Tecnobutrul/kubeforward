@@ -149,7 +149,7 @@ func argInfo() (string, []string) {
 	var svar bool = false
 
 	flag.StringVar(&fvar, "file", "", "string as path")
-	flag.BoolVar(&svar, "quite", true, "silent")
+	flag.BoolVar(&svar, "quite", true, "silent mode enable")
 	flag.BoolVar(&svar, "verbose", true, "debug mode enable")
 	flag.Parse()
 
