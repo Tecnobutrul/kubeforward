@@ -27,7 +27,7 @@ type portForward struct {
 // Returns pod name and error output
 func getPodName(deploy string) (string, error) {
 
-	cmd := exec.Command("kubectl", "get", "pods", "--namespace", "default", "-l", fmt.Sprintf("app=%s", deploy), "-o", "jsonpath={.items[0].metadata.name}")
+	cmd := exec.Command("kubectl", "get", "pods", "-l", fmt.Sprintf("app=%s", deploy), "-o", "jsonpath={.items[0].metadata.name}")
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	err := cmd.Run()
