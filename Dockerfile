@@ -31,10 +31,6 @@ RUN wget https://github.com/Azure/kubelogin/releases/download/v0.0.29/kubelogin-
 
 RUN unzip -j kubelogin-linux-amd64.zip bin/linux_amd64/kubelogin -d /usr/local/bin
 
-
-# Command to run the executable
-ENTRYPOINT ["./kubeforward","--file=port-forward.yml"]
-
 FROM bitnami/kubectl
 
 COPY --from=build /app/kubeforward /usr/local/bin/
