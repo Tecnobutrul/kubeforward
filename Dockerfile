@@ -16,17 +16,28 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the source from the current directory to the Working Directory inside the container
-COPY . .
+COPY kubeforward.go .
 
 # Build the Go app
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubeforward .
 
-FROM alpine:latest
+RUN apt-get update
 
-WORKDIR /root
+RUN apt install -y wget
 
-COPY --from=build /app/kubeforward .
+RUN apt install -y unzip
+
+RUN wget https://github.com/Azure/kubelogin/releases/download/v0.0.29/kubelogin-linux-amd64.zip
+
+RUN unzip -j kubelogin-linux-amd64.zip bin/linux_amd64/kubelogin -d /usr/local/bin
+
+FROM bitnami/kubectl
+
+COPY --from=build /app/kubeforward /usr/local/bin/
+
+COPY --from=build /usr/local/bin/kubelogin /usr/local/bin/
+
+USER root
 
 # Command to run the executable
-CMD ["./kubeforward"]
-
+ENTRYPOINT ["/usr/local/bin/kubeforward","--file=port-forward.yml"]
