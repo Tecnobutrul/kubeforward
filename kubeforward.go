@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"log"
@@ -15,13 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
 
-type portForward struct {
-	name     string
-	podPort  string
-	hostPort string
-}
+	"gopkg.in/yaml.v2"
+)
 
 // Gets pod name from the first pod on deployment array
 // Returns pod name and error output
@@ -34,11 +29,11 @@ func getPodName(deploy string) (string, error) {
 
 	if err != nil {
 		cmd.Wait()
-		return string(cmdOutput.Bytes()), fmt.Errorf("%s pod not found", deploy)
+		return string(cmdOutput.String()), fmt.Errorf("%s pod not found", deploy)
 	}
 
 	cmd.Wait()
-	return string(cmdOutput.Bytes()), nil
+	return string(cmdOutput.String()), nil
 }
 
 // Start port-forward in a goroutine
@@ -57,7 +52,14 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 		}
 
 		t := time.Now().Format("2006-01-02 15:04:05")
-		cmd := exec.Command("kubectl", "port-forward", fmt.Sprintf("pods/%s", podName), fmt.Sprintf("%s:%s", hostPort, podPort))
+		cmd := exec.Command(
+			"kubectl",
+			"port-forward",
+			"--address",
+			"0.0.0.0",
+			fmt.Sprintf("pod/%s", podName),
+			fmt.Sprintf("%s:%s", hostPort, podPort),
+		)
 
 		//Execution modes (verbose, debug, standard)
 		if isFlagPassed("verbose") {
