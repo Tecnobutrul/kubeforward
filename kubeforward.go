@@ -18,11 +18,17 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var kubectx string
+
 // Gets pod name from the first pod on deployment array
 // Returns pod name and error output
 func getPodName(deploy string) (string, error) {
+	args := []string{"get", "pods", "-l", fmt.Sprintf("app=%s", deploy), "-o", "jsonpath={.items[0].metadata.name}"}
+	if kubectx != "" {
+		args = append([]string{"--context", kubectx}, args...)
+	}
 
-	cmd := exec.Command("kubectl", "get", "pods", "-l", fmt.Sprintf("app=%s", deploy), "-o", "jsonpath={.items[0].metadata.name}")
+	cmd := exec.Command("kubectl", args...)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	err := cmd.Run()
@@ -52,14 +58,12 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 		}
 
 		t := time.Now().Format("2006-01-02 15:04:05")
-		cmd := exec.Command(
-			"kubectl",
-			"port-forward",
-			"--address",
-			"0.0.0.0",
-			fmt.Sprintf("pod/%s", podName),
-			fmt.Sprintf("%s:%s", hostPort, podPort),
-		)
+		pfArgs := []string{"port-forward", "--address", "0.0.0.0", fmt.Sprintf("pod/%s", podName), fmt.Sprintf("%s:%s", hostPort, podPort)}
+		if kubectx != "" {
+			pfArgs = append([]string{"--context", kubectx}, pfArgs...)
+		}
+
+		cmd := exec.Command("kubectl", pfArgs...)
 
 		//Execution modes (verbose, debug, standard)
 		if isFlagPassed("verbose") {
@@ -151,6 +155,7 @@ func argInfo() (string, []string) {
 	var svar bool = false
 
 	flag.StringVar(&fvar, "file", "", "string as path")
+	flag.StringVar(&kubectx, "context", "", "kubectl context name")
 	flag.BoolVar(&svar, "quiet", true, "silent mode enable")
 	flag.BoolVar(&svar, "verbose", true, "debug mode enable")
 	flag.Parse()
@@ -211,7 +216,7 @@ func ValidDeployInfo(s string) bool {
 
 func showHelp() {
 	fmt.Println("kubeforward: missing either argument or deploy.yaml file.")
-	fmt.Println("Use: kubeforward <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
+	fmt.Println("Use: kubeforward [--context <context>] <deploy_name>:<host_port>:<pod_port> [<deploy_name>:<host_port>:<pod_port> ...]")
 }
 
 func isFlagPassed(name string) bool {

@@ -1,5 +1,5 @@
 module github.com/Tecnobutrul/kubeforward
 
-go 1.15
+go 1.26
 
 require gopkg.in/yaml.v2 v2.3.0
