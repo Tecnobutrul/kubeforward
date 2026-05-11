@@ -39,6 +39,25 @@ deploy:
     podport: <port>
 ```
 
+## Docker image (multi-arch)
+
+Build and push to Docker Hub with podman:
+
+```bash
+# Login
+podman login docker.io
+
+# Create manifest
+podman manifest create kubeforward:latest
+
+# Build for amd64 and arm64
+podman build --build-arg KUBELOGIN_VERSION=v0.2.17 --platform linux/amd64 --manifest kubeforward:latest .
+podman build --build-arg KUBELOGIN_VERSION=v0.2.17 --platform linux/arm64 --manifest kubeforward:latest .
+
+# Push multi-arch manifest
+podman manifest push kubeforward:latest docker.io/frandieguez/kubeforward:latest
+```
+
 ## LICENSE
 
 [GPLv3](https://www.gnu.org/licenses/gpl-3.0.html)

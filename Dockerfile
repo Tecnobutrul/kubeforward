@@ -19,17 +19,23 @@ RUN go mod download
 COPY kubeforward.go .
 
 # Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubeforward .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubeforward . && \
+    rm -rf $GOCACHE $GOPATH/pkg/mod
 
-RUN apt-get update
+ARG KUBELOGIN_VERSION=v0.2.17
+ARG TARGETARCH
 
-RUN apt install -y wget
-
-RUN apt install -y unzip
-
-RUN wget https://github.com/Azure/kubelogin/releases/download/v0.0.29/kubelogin-linux-amd64.zip
-
-RUN unzip -j kubelogin-linux-amd64.zip bin/linux_amd64/kubelogin -d /usr/local/bin
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget unzip && \
+    case ${TARGETARCH} in \
+        arm64|aarch64) \
+            KUBELOGIN_URL="https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-arm64.zip" ;; \
+        *) \
+            KUBELOGIN_URL="https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip" ;; \
+    esac && \
+    wget -O kubelogin.zip "$KUBELOGIN_URL" && \
+    unzip -j kubelogin.zip "*/kubelogin" -d /usr/local/bin && \
+    rm -rf kubelogin.zip /var/lib/apt/lists/*
 
 FROM bitnami/kubectl:latest
 
