@@ -1,0 +1,29 @@
+name: Go Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [1.23, 1.26]
+        platform: [ubuntu-latest]
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build
+        run: go build -v -o build/kubeforward .
+
+      - name: Test
+        run: go test -v -count=1 ./...

@@ -21,6 +21,7 @@ import (
 )
 
 var kubectx string
+var execCommand = exec.CommandContext
 
 // Gets pod name from the first pod on deployment array
 // Returns pod name and error output
@@ -30,7 +31,7 @@ func getPodName(ctx context.Context, deploy string) (string, error) {
 		args = append([]string{"--context", kubectx}, args...)
 	}
 
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	cmd := execCommand(ctx, "kubectl", args...)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	err := cmd.Run()
@@ -70,7 +71,7 @@ func startForward(ctx context.Context, deploy, hostPort, podPort string, wg *syn
 			pfArgs = append([]string{"--context", kubectx}, pfArgs...)
 		}
 
-		cmd := exec.CommandContext(ctx, "kubectl", pfArgs...)
+		cmd := execCommand(ctx, "kubectl", pfArgs...)
 
 		// Execution modes (verbose, debug, standard)
 		if isFlagPassed("verbose") {
@@ -151,16 +152,19 @@ type Deployment struct {
 	Podport  string
 }
 
-func getConfFile(filename string) Yaml {
-	data, _ := os.ReadFile(filename)
-	config := Yaml{}
-
-	err := yaml.Unmarshal([]byte(data), &config)
+func getConfFile(filename string) (Yaml, error) {
+	data, err := os.ReadFile(filename)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		return Yaml{}, err
 	}
 
-	return config
+	var config Yaml
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return Yaml{}, err
+	}
+
+	return config, nil
 
 }
 
@@ -199,13 +203,12 @@ func getArgsConfig(config *Yaml, a []string) {
 			continue
 		}
 
+		fields := strings.Split(arg, ":")
+		new_dep.Name = fields[0]
+		new_dep.Hostport = fields[1]
+		new_dep.Podport = fields[2]
+
 		for i, dp := range config.Deployment {
-
-			fields := strings.Split(arg, ":")
-			new_dep.Name = fields[0]
-			new_dep.Hostport = string(fields[1])
-			new_dep.Podport = string(fields[2])
-
 			// If deployment is already in config, overwrite it
 			if new_dep.Name == dp.Name {
 				config.Deployment[i] = new_dep
@@ -251,7 +254,11 @@ func main() {
 
 	// Check whether either any parameter or config file was received
 	if fileExists(filename) {
-		config = getConfFile(filename)
+		var err error
+		config, err = getConfFile(filename)
+		if err != nil {
+			log.Fatalf("error: %v", err)
+		}
 	} else {
 		if len(args) == 0 {
 			showHelp()
