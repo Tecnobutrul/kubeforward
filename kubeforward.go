@@ -2,17 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -22,34 +24,39 @@ var kubectx string
 
 // Gets pod name from the first pod on deployment array
 // Returns pod name and error output
-func getPodName(deploy string) (string, error) {
+func getPodName(ctx context.Context, deploy string) (string, error) {
 	args := []string{"get", "pods", "-l", fmt.Sprintf("app=%s", deploy), "-o", "jsonpath={.items[0].metadata.name}"}
 	if kubectx != "" {
 		args = append([]string{"--context", kubectx}, args...)
 	}
 
-	cmd := exec.Command("kubectl", args...)
+	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput
 	err := cmd.Run()
 
 	if err != nil {
-		cmd.Wait()
-		return string(cmdOutput.String()), fmt.Errorf("%s pod not found", deploy)
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", fmt.Errorf("%s pod not found", deploy)
 	}
 
-	cmd.Wait()
 	return string(cmdOutput.String()), nil
 }
 
 // Start port-forward in a goroutine
-func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
+func startForward(ctx context.Context, deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 
 	// Finish goroutine at the end of this function
 	defer wg.Done()
 
 	for {
-		podName, err := getPodName(deploy)
+		if ctx.Err() != nil {
+			return
+		}
+
+		podName, err := getPodName(ctx, deploy)
 
 		if err != nil {
 			// If pod name wasn't found, it breaks the loop and finishes goroutine
@@ -63,9 +70,9 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 			pfArgs = append([]string{"--context", kubectx}, pfArgs...)
 		}
 
-		cmd := exec.Command("kubectl", pfArgs...)
+		cmd := exec.CommandContext(ctx, "kubectl", pfArgs...)
 
-		//Execution modes (verbose, debug, standard)
+		// Execution modes (verbose, debug, standard)
 		if isFlagPassed("verbose") {
 			var stdBuffer bytes.Buffer
 			mw := io.MultiWriter(os.Stdout, &stdBuffer)
@@ -74,14 +81,14 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 			cmd.Stderr = mw
 			fmt.Printf("[%s] Forwarding %-12s port %3s to local port %4s [pod: %s]\n", t, deploy, podPort, hostPort, podName)
 
-			// Execute the command
 			if err := cmd.Run(); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Panic(err)
 			}
 
 			log.Println(stdBuffer.String())
-
-			cmd.Wait()
 
 			t = time.Now().Format("2006-01-02 15:04:05")
 			fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
@@ -91,6 +98,9 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 			err = cmd.Run()
 
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				os.Stderr.WriteString(err.Error())
 				fmt.Println("")
 			}
@@ -101,17 +111,22 @@ func startForward(deploy, hostPort, podPort string, wg *sync.WaitGroup) {
 			err = cmd.Run()
 
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				os.Stderr.WriteString(err.Error())
-				cmd.Wait()
 
 				t = time.Now().Format("2006-01-02 15:04:05")
 				fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
 				fmt.Println("")
 			}
-			cmd.Wait()
 
 			t = time.Now().Format("2006-01-02 15:04:05")
 			fmt.Printf("[%s] %s port-forward failed. Retrying...\n", t, strings.ToUpper(deploy))
+		}
+
+		if ctx.Err() != nil {
+			return
 		}
 	}
 }
@@ -137,7 +152,7 @@ type Deployment struct {
 }
 
 func getConfFile(filename string) Yaml {
-	data, _ := ioutil.ReadFile(filename)
+	data, _ := os.ReadFile(filename)
 	config := Yaml{}
 
 	err := yaml.Unmarshal([]byte(data), &config)
@@ -152,12 +167,12 @@ func getConfFile(filename string) Yaml {
 // Return config file path if exists and an array of deploy configurations
 func argInfo() (string, []string) {
 	var fvar string
-	var svar bool = false
+	var quiet, verbose bool
 
 	flag.StringVar(&fvar, "file", "", "string as path")
 	flag.StringVar(&kubectx, "context", "", "kubectl context name")
-	flag.BoolVar(&svar, "quiet", true, "silent mode enable")
-	flag.BoolVar(&svar, "verbose", true, "debug mode enable")
+	flag.BoolVar(&quiet, "quiet", false, "silent mode enable")
+	flag.BoolVar(&verbose, "verbose", false, "debug mode enable")
 	flag.Parse()
 
 	var path string
@@ -246,13 +261,25 @@ func main() {
 
 	getArgsConfig(&config, args)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\nShutting down gracefully...")
+		cancel()
+	}()
+
 	var wg sync.WaitGroup
 	wg.Add(len(config.Deployment))
 
 	for _, dp := range config.Deployment {
 		// Initiates a goroutine for every port-forward
-		go startForward(dp.Name, dp.Hostport, dp.Podport, &wg)
+		go startForward(ctx, dp.Name, dp.Hostport, dp.Podport, &wg)
 	}
 
 	wg.Wait()
+	fmt.Println("All port-forwards closed.")
 }
