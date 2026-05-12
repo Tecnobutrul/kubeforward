@@ -89,6 +89,10 @@ podman build --build-arg KUBELOGIN_VERSION=v0.2.17 --platform linux/arm64 --mani
 podman manifest push kubeforward:latest docker.io/frandieguez/kubeforward:latest
 ```
 
+## Maintainers
+
+- [Fran Dieguez](https://github.com/frandieguez)
+
 ## LICENSE
 
 [GPLv3](https://www.gnu.org/licenses/gpl-3.0.html)
