@@ -19,7 +19,7 @@ RUN go mod download
 COPY kubeforward.go .
 
 # Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubeforward . && \
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o build/kubeforward . && \
     rm -rf $GOCACHE $GOPATH/pkg/mod
 
 ARG KUBELOGIN_VERSION=v0.2.17
@@ -39,7 +39,7 @@ RUN apt-get update && \
 
 FROM bitnami/kubectl:latest
 
-COPY --from=build /app/kubeforward /usr/local/bin/
+COPY --from=build /app/build/kubeforward /usr/local/bin/
 
 COPY --from=build /usr/local/bin/kubelogin /usr/local/bin/
 
