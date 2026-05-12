@@ -43,7 +43,9 @@ func TestValidDeployInfo(t *testing.T) {
 		{"valid max port 65535", "myapp:65535:65535", true},
 		{"valid port 0", "myapp:0:0", true},
 		{"invalid no hostport", "myapp::80", false},
-		{"invalid letters in port", "myapp:abc:80", false},
+		{"invalid letters in hostport", "myapp:abc:80", false},
+		{"valid named podport", "myapp:8080:http", true},
+		{"valid named podport with hyphen", "myapp:8080:my-port", true},
 		{"invalid empty string", "", false},
 		{"invalid special chars", "my@app:8080:80", false},
 		{"invalid leading colon", ":8080:80", false},
@@ -466,6 +468,124 @@ func TestArgInfo(t *testing.T) {
 			t.Errorf("args = %v, want [svc:8080:80]", args)
 		}
 	})
+}
+
+func TestIsNumeric(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		{"numeric", "8080", true},
+		{"zero", "0", true},
+		{"empty", "", false},
+		{"letters", "http", false},
+		{"mixed", "80a", false},
+		{"hyphen", "my-port", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isNumeric(tt.s); got != tt.want {
+				t.Errorf("isNumeric(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveNamedPort(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		prev := execCommand
+		execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+			return exec.Command("echo", "-n", "3000")
+		}
+		defer func() { execCommand = prev }()
+
+		port, err := resolveNamedPort(context.Background(), "mypod", "http")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if port != "3000" {
+			t.Errorf("got %q, want %q", port, "3000")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		prev := execCommand
+		execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+			return exec.Command("echo", "-n", "")
+		}
+		defer func() { execCommand = prev }()
+
+		_, err := resolveNamedPort(context.Background(), "mypod", "nonexistent")
+		if err == nil {
+			t.Fatal("expected error for unknown port name")
+		}
+	})
+
+	t.Run("command failure", func(t *testing.T) {
+		prev := execCommand
+		execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+			return exec.Command("false")
+		}
+		defer func() { execCommand = prev }()
+
+		_, err := resolveNamedPort(context.Background(), "nonexistent", "http")
+		if err == nil {
+			t.Fatal("expected error on command failure")
+		}
+	})
+}
+
+func TestStartForward_WithNamedPort(t *testing.T) {
+	defer discardStdout()()
+	kubectx = ""
+
+	var callIndex int
+	var mu sync.Mutex
+	prev := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "kubectl" {
+			return exec.Command("true")
+		}
+		mu.Lock()
+		callIndex++
+		index := callIndex
+		mu.Unlock()
+
+		if len(args) > 0 && args[0] == "get" && index == 1 {
+			// First get: locate pod
+			return exec.Command("echo", "-n", "mypod")
+		}
+		if len(args) > 0 && args[0] == "get" && index == 2 {
+			// Second get: resolve named port
+			return exec.Command("echo", "-n", "3000")
+		}
+		if len(args) > 0 && args[0] == "port-forward" {
+			return exec.CommandContext(ctx, "sleep", "30")
+		}
+		return exec.Command("true")
+	}
+	defer func() { execCommand = prev }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	done := make(chan struct{})
+	go func() {
+		startForward(ctx, "testapp", "8080", "http", &wg)
+		close(done)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startForward did not exit")
+	}
 }
 
 func TestStartForward_RetryOnPortForwardFailure(t *testing.T) {

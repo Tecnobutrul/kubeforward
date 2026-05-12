@@ -66,7 +66,17 @@ func startForward(ctx context.Context, deploy, hostPort, podPort string, wg *syn
 		}
 
 		t := time.Now().Format("2006-01-02 15:04:05")
-		pfArgs := []string{"port-forward", "--address", "0.0.0.0", fmt.Sprintf("pod/%s", podName), fmt.Sprintf("%s:%s", hostPort, podPort)}
+
+		resolvedPodPort := podPort
+		if !isNumeric(podPort) {
+			resolvedPodPort, err = resolveNamedPort(ctx, podName, podPort)
+			if err != nil {
+				fmt.Println(err)
+				break
+			}
+		}
+
+		pfArgs := []string{"port-forward", "--address", "0.0.0.0", fmt.Sprintf("pod/%s", podName), fmt.Sprintf("%s:%s", hostPort, resolvedPodPort)}
 		if kubectx != "" {
 			pfArgs = append([]string{"--context", kubectx}, pfArgs...)
 		}
@@ -130,6 +140,30 @@ func startForward(ctx context.Context, deploy, hostPort, podPort string, wg *syn
 			return
 		}
 	}
+}
+
+func resolveNamedPort(ctx context.Context, podName, portName string) (string, error) {
+	jsonpath := fmt.Sprintf("{.spec.containers[*].ports[?(@.name=='%s')].containerPort}", portName)
+	args := []string{"get", "pod", podName, "-o", "jsonpath=" + jsonpath}
+	if kubectx != "" {
+		args = append([]string{"--context", kubectx}, args...)
+	}
+
+	cmd := execCommand(ctx, "kubectl", args...)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("port %q not found in pod %s", portName, podName)
+	}
+
+	result := strings.TrimSpace(stdout.String())
+	if result == "" {
+		return "", fmt.Errorf("port %q not found in pod %s", portName, podName)
+	}
+
+	// If multiple containers match, take the first port number
+	ports := strings.Fields(result)
+	return ports[0], nil
 }
 
 func fileExists(filename string) bool {
@@ -227,9 +261,13 @@ func getArgsConfig(config *Yaml, a []string) {
 
 func ValidDeployInfo(s string) bool {
 	s = strings.ToLower(s)
-	valid := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\.]{1,250}[:][0-9]{1,5}[:][0-9]{1,5}$`)
-	// valid := regexp.MustCompile(`^[a-z0-9]$`)
+	// hostPort: numeric; podPort: numeric or Kubernetes port name (alphanum + hyphens)
+	valid := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\.]{1,250}[:][0-9]{1,5}[:][a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`)
 	return valid.MatchString(s)
+}
+
+func isNumeric(s string) bool {
+	return regexp.MustCompile(`^[0-9]+$`).MatchString(s)
 }
 
 func showHelp() {

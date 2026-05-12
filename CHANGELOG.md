@@ -4,21 +4,17 @@
 
 ### Added
 
-- `--context` flag to select kubectl context
-- Graceful shutdown on SIGINT/SIGTERM with context cancellation
-- Multi-arch Docker image support (linux/amd64, linux/arm64)
-- `KUBELOGIN_VERSION` build arg in Dockerfile
+- Named port support: `podPort` now accepts Kubernetes port names (e.g. `myapp:8080:http`)
+- `resolveNamedPort` function that resolves port names to numbers via kubectl
+- `isNumeric` helper function
+- Comprehensive test suite (69 tests) covering validations, config parsing, pod lookup, graceful shutdown, and named ports
+- GitHub Actions CI workflow (`go test` on push/PR)
 
 ### Changed
 
 - Separated `quiet` and `verbose` flags into independent variables
 - Refactored `getConfFile` to return error instead of calling `log.Fatalf`
-
-### Added
-
-- Comprehensive test suite with 49 tests covering validations, config parsing, pod lookup, and graceful shutdown
-- GitHub Actions CI workflow (`go test` on push/PR)
-- `.github/workflows/test.yml`
+- Updated `ValidDeployInfo` regex to allow Kubernetes port names in podPort position
 
 ### Removed
 
