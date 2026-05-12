@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -295,7 +297,7 @@ func TestGetPodName(t *testing.T) {
 
 func TestStartForward_GetPodNameFailure(t *testing.T) {
 	defer discardStdout()()
-
+	kubectx = ""
 	execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
 		return exec.Command("false")
 	}
@@ -464,6 +466,252 @@ func TestArgInfo(t *testing.T) {
 			t.Errorf("args = %v, want [svc:8080:80]", args)
 		}
 	})
+}
+
+func TestStartForward_RetryOnPortForwardFailure(t *testing.T) {
+	defer discardStdout()()
+	kubectx = ""
+
+	var mu sync.Mutex
+	var getCount, pfCount int
+	prev := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "kubectl" {
+			return exec.Command("true")
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(args) > 0 && args[0] == "get" {
+			getCount++
+			return exec.Command("echo", "-n", "mypod")
+		}
+		if len(args) > 0 && args[0] == "port-forward" {
+			pfCount++
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	defer func() { execCommand = prev }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	done := make(chan struct{})
+	go func() {
+		startForward(ctx, "testapp", "8080", "80", &wg)
+		close(done)
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("startForward did not exit")
+	}
+
+	mu.Lock()
+	t.Logf("get calls: %d, port-forward calls: %d", getCount, pfCount)
+	mu.Unlock()
+	if getCount < 2 {
+		t.Errorf("expected at least 2 getPodName calls, got %d", getCount)
+	}
+	if pfCount < 2 {
+		t.Errorf("expected at least 2 port-forward calls, got %d", pfCount)
+	}
+}
+
+func TestStartForward_PortForwardSuccessThenFail(t *testing.T) {
+	defer discardStdout()()
+
+	callCount := 0
+	prev := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		callCount++
+		if len(args) > 0 && args[0] == "get" {
+			return exec.Command("echo", "-n", "mypod")
+		}
+		// First port-forward succeeds, second fails
+		if callCount <= 3 {
+			return exec.Command("echo", "-n", "ok")
+		}
+		return exec.Command("false")
+	}
+	defer func() { execCommand = prev }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	done := make(chan struct{})
+	go func() {
+		startForward(ctx, "testapp", "8080", "80", &wg)
+		close(done)
+	}()
+
+	time.Sleep(250 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startForward did not exit")
+	}
+
+	if callCount < 4 {
+		t.Errorf("expected multiple call cycles (success then fail), got %d total calls", callCount)
+	}
+}
+
+func TestStartForward_VerboseMode(t *testing.T) {
+	defer discardStdout()()
+
+	resetFlags()
+	flag.Bool("verbose", false, "")
+	os.Args = []string{"kubeforward", "--verbose", "myapp:8080:80"}
+	flag.Parse()
+	defer resetFlags()
+
+	var captured *bytes.Buffer
+	prev := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if len(args) > 0 && args[0] == "get" {
+			return exec.Command("echo", "-n", "mypod")
+		}
+		cmd := exec.CommandContext(ctx, "echo", "-n", "forwarding ok")
+		buf := new(bytes.Buffer)
+		captured = buf
+		cmd.Stdout = buf
+		cmd.Stderr = buf
+		return cmd
+	}
+	defer func() { execCommand = prev }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	done := make(chan struct{})
+	go func() {
+		startForward(ctx, "testapp", "8080", "80", &wg)
+		close(done)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startForward did not exit")
+	}
+
+	if captured == nil {
+		t.Error("expected stdout/stderr capture in verbose mode")
+	}
+}
+
+func TestStartForward_QuietMode(t *testing.T) {
+	resetFlags()
+	flag.Bool("quiet", false, "")
+	os.Args = []string{"kubeforward", "--quiet", "myapp:8080:80"}
+	flag.Parse()
+	defer resetFlags()
+
+	defer discardStdout()()
+
+	prev := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if len(args) > 0 && args[0] == "get" {
+			return exec.Command("echo", "-n", "mypod")
+		}
+		return exec.Command("true")
+	}
+	defer func() { execCommand = prev }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	done := make(chan struct{})
+	go func() {
+		startForward(ctx, "testapp", "8080", "80", &wg)
+		close(done)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startForward did not exit")
+	}
+}
+
+func TestGetPodNameWithContextFlag(t *testing.T) {
+	kubectx = "my-cluster"
+	defer func() { kubectx = "" }()
+
+	prev := execCommand
+	execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+		if len(args) > 0 && args[0] == "--context" && args[1] == "my-cluster" {
+			return exec.Command("echo", "-n", "mypod")
+		}
+		t.Errorf("expected --context my-cluster in args, got %v", args)
+		return exec.Command("false")
+	}
+	defer func() { execCommand = prev }()
+
+	name, err := getPodName(context.Background(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "mypod" {
+		t.Errorf("got %q, want %q", name, "mypod")
+	}
+}
+
+func TestMainSuccess(t *testing.T) {
+	defer discardStdout()()
+
+	os.Args = []string{"kubeforward", "myapp:8080:80"}
+
+	resetFlags()
+
+	prev := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if len(args) > 0 && args[0] == "get" {
+			return exec.Command("echo", "-n", "mypod")
+		}
+		return exec.CommandContext(ctx, "sleep", "30")
+	}
+	defer func() { execCommand = prev }()
+
+	done := make(chan struct{})
+	go func() {
+		defer func() { recover() }()
+		main()
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	p, _ := os.FindProcess(os.Getpid())
+	p.Signal(syscall.SIGINT)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("main did not exit after SIGINT")
+	}
 }
 
 func BenchmarkValidDeployInfo(b *testing.B) {
